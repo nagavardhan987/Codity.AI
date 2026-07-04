@@ -1,0 +1,517 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<title>Project Report - Job Scheduler</title>
+
+<style>
+body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 850px; margin: 0 auto; padding: 40px; line-height: 1.6; color: #333; }
+h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-top: 40px; }
+h2 { color: #2980b9; border-bottom: 1px solid #eee; margin-top: 30px; }
+h3 { color: #34495e; }
+img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: 20px 0; }
+pre { background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; border: 1px solid #e9ecef; }
+code { font-family: Consolas, monospace; background: #f1f3f5; padding: 2px 5px; border-radius: 3px; color: #e83e8c; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+th { background-color: #f8f9fa; color: #2c3e50; }
+.toc { background: #f8f9fa; padding: 20px; border-radius: 5px; border: 1px solid #eee; margin-bottom: 40px; }
+.toc ul { list-style-type: none; padding-left: 0; }
+.toc li { margin-bottom: 10px; }
+.toc a { text-decoration: none; color: #3498db; font-weight: bold; }
+.screenshot-box { border: 2px dashed #bdc3c7; background: #fdfdfd; padding: 40px; text-align: center; color: #7f8c8d; margin: 20px 0; border-radius: 5px; font-weight: bold; }
+</style>
+
+</head>
+<body>
+
+<h1>Job Scheduler System - Final Report</h1>
+<p><strong>Name:</strong> Nagavardhan Neerumalla</p>
+<p><strong>Registration Number:</strong> RA2311003011649</p>
+<p><strong>GitHub Repository:</strong> <a href='https://github.com/nagavardhan987/Codity.AI'>https://github.com/nagavardhan987/Codity.AI</a></p>
+
+<div class='toc'>
+    <h2>Table of Contents</h2>
+    <ul>
+        <li><a href='#intro'>1. Introduction</a></li>
+        <li><a href='#tech'>2. Technology Stack</a></li>
+        <li><a href='#arch'>3. System Architecture</a></li>
+        <li><a href='#er'>4. ER Diagram & Database Design</a></li>
+        <li><a href='#indexes'>5. Database Indexes</a></li>
+        <li><a href='#lifecycle'>6. Job Lifecycle</a></li>
+        <li><a href='#design'>7. Design Decisions & Reliability</a></li>
+        <li><a href='#api'>8. API Documentation</a></li>
+        <li><a href='#testing'>9. Testing Architecture</a></li>
+        <li><a href='#ui'>10. User Interface Screenshots</a></li>
+        <li><a href='#bonus'>11. Bonus Features Implemented</a></li>
+        <li><a href='#future'>12. Future Improvements</a></li>
+        <li><a href='#setup'>13. Setup Instructions</a></li>
+    </ul>
+</div>
+
+<h2 id='intro'>1. Introduction</h2>
+<p>The Distributed Job Scheduler is a scalable background processing platform inspired by systems such as Sidekiq, Celery and AWS SQS. It supports delayed, scheduled, recurring and batch jobs with distributed worker execution, retry policies and dead letter queue handling.</p>
+
+<h2 id='tech'>2. Technology Stack</h2>
+<ul>
+    <li><strong>Frontend:</strong> Next.js, React, TypeScript, TailwindCSS</li>
+    <li><strong>Backend:</strong> Express.js, Node.js, TypeScript</li>
+    <li><strong>Database:</strong> PostgreSQL (pg driver)</li>
+    <li><strong>Containerization:</strong> Docker & Docker Compose</li>
+    <li><strong>Authentication:</strong> JWT (JSON Web Tokens)</li>
+</ul>
+
+<h2 id='arch'>3. System Architecture</h2>
+<img src='./Architecture_Diagram-1.png' alt='Architecture Diagram' />
+
+<h2 id='er'>4. ER Diagram & Database Design</h2>
+<img src='./ER_Diagram-1.png' alt='ER Diagram' />
+
+<h2 id='indexes'>5. Database Indexes</h2>
+<p>To ensure high performance at scale, especially during the atomic worker claims and dashboard querying, the following indexes are implemented:</p>
+<table>
+    <tr><th>Table</th><th>Index Columns</th><th>Purpose</th></tr>
+    <tr><td><code>jobs</code></td><td><code>(queue_id, status, run_at)</code></td><td>Optimizes the critical path for workers scanning for pending jobs to claim.</td></tr>
+    <tr><td><code>job_executions</code></td><td><code>(job_id)</code></td><td>Fast lookups for execution histories and retry counts.</td></tr>
+    <tr><td><code>worker_heartbeats</code></td><td><code>(worker_id)</code></td><td>Required for the Scheduler to quickly scan for dead workers.</td></tr>
+    <tr><td><code>dead_letter_queue</code></td><td><code>(job_id)</code></td><td>Quickly tracing failed jobs back to their origin.</td></tr>
+</table>
+
+<h2 id='lifecycle'>6. Job Lifecycle</h2>
+<p>The following state machine defines the lifecycle of a job within the scheduler from creation to completion or failure:</p>
+<img src='./Job_Lifecycle-1.png' alt='Job Lifecycle Diagram' />
+<p><em>*Note: Stalled jobs (where a worker dies during execution) are automatically detected via missing heartbeats and returned to the Queued state by the Scheduler.</em></p>
+
+<h2 id='design'>7. Design Decisions & Reliability</h2>
+<h1>Design Decisions</h1>
+<h2>Postgres <code>FOR UPDATE SKIP LOCKED</code> vs Redis/RabbitMQ</h2>
+<p>The decision to use PostgreSQL with <code>FOR UPDATE SKIP LOCKED</code> for job claiming instead of a dedicated message broker (like Redis or RabbitMQ) simplifies the operational architecture. </p>
+<ul>
+<li><strong>Atomic Claiming:</strong> <code>FOR UPDATE SKIP LOCKED</code> allows multiple workers to concurrently poll the <code>jobs</code> table without locking each other out. It grabs rows that are available and instantly locks them, while other workers simply skip those rows.</li>
+<li><strong>Single Source of Truth:</strong> Managing jobs, metadata, and application data in the same PostgreSQL database enables transactional guarantees. For example, moving a failed job to the DLQ and updating its status can be done in a single transaction.</li>
+<li><strong>Simplicity:</strong> By avoiding a separate broker, deployment is streamlined (only needing Node.js and Postgres).</li>
+</ul>
+<h2>Retry Logic</h2>
+<p>The worker node handles retrying jobs that fail. </p>
+<ul>
+<li>A retry policy (fixed, linear, or exponential) is attached to each queue.</li>
+<li>When a job fails (caught in the worker execution loop in <code>worker/worker.ts</code>), the worker looks at the job&#39;s execution attempt count.</li>
+<li>If the attempt count is within the permitted <code>max_retries</code>, it computes the delay based on the policy and updates the job&#39;s <code>run_at</code> to a future timestamp, effectively requeuing it.</li>
+<li>If the max retries are exceeded, the job is moved to the Dead Letter Queue (<code>dead_letter_queue</code> table) for manual inspection.</li>
+</ul>
+<h2>Dead Worker Recovery (Heartbeat and Sweeper Mechanism)</h2>
+<p>To handle scenarios where a worker crashes or becomes unresponsive while processing a job:</p>
+<ul>
+<li><strong>Worker Heartbeat:</strong> Each worker periodically (every 15 seconds) inserts a heartbeat record containing memory and CPU usage into <code>worker_heartbeats</code>.</li>
+<li><strong>Scheduler Sweeper:</strong> The scheduler loop (<code>scheduler/scheduler.ts</code>) scans for workers that haven&#39;t emitted a heartbeat in over 60 seconds.</li>
+<li><strong>Recovery:</strong> When a stalled worker is detected, the scheduler marks the worker as &#39;dead&#39;. It then looks for any &#39;running&#39; job executions tied to that worker, marks those executions as &#39;failed&#39;, and resets the corresponding job status to &#39;queued&#39; so another healthy worker can claim and run it.</li>
+</ul>
+<h2>CASCADE Behaviors</h2>
+<p>The system ensures referential integrity using PostgreSQL features. Instead of complex application-level cascading deletes, jobs are bound to queues, queues to projects, and projects to organizations. </p>
+<h2>Indexing for Performance</h2>
+<p>A composite index on <code>(queue_id, status, run_at)</code> exists on the <code>Jobs</code> table. This is critical for the worker claim query&#39;s performance under high concurrency. When hundreds of workers simultaneously poll the database using <code>FOR UPDATE SKIP LOCKED</code>, this index ensures they can instantly locate the earliest available <code>queued</code> job in their assigned queue without performing expensive sequential scans, maintaining high throughput.</p>
+
+<h2 id='api'>8. API Documentation</h2>
+<h1>API Reference</h1>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Auth Required</th>
+<th>Payload</th>
+<th>Status Codes</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/api/auth/register</code></td>
+<td>POST</td>
+<td>No</td>
+<td><code>{ email, password }</code></td>
+<td>201, 400</td>
+<td>Register a new user</td>
+</tr>
+<tr>
+<td><code>/api/auth/login</code></td>
+<td>POST</td>
+<td>No</td>
+<td><code>{ email, password }</code></td>
+<td>200, 400, 401</td>
+<td>Login and receive JWT</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/queues</code></td>
+<td>GET</td>
+<td>No</td>
+<td>None</td>
+<td>200, 500</td>
+<td>List all queues with active/paused status</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/workers</code></td>
+<td>GET</td>
+<td>No</td>
+<td>None</td>
+<td>200, 500</td>
+<td>List all workers and their heartbeats</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/jobs</code></td>
+<td>GET</td>
+<td>No</td>
+<td>Query: <code>queue_id</code></td>
+<td>200, 500</td>
+<td>List jobs for a queue</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/jobs/:id/logs</code></td>
+<td>GET</td>
+<td>No</td>
+<td>None</td>
+<td>200, 404, 500</td>
+<td>Fetch logs for a specific job</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/queues</code></td>
+<td>POST</td>
+<td>No</td>
+<td><code>{ name, priority, concurrency_limit }</code></td>
+<td>201, 500</td>
+<td>Create a queue (Dashboard demo)</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/queues/:id/toggle</code></td>
+<td>POST</td>
+<td>No</td>
+<td>None</td>
+<td>200, 500</td>
+<td>Pause/Resume a queue</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/jobs</code></td>
+<td>POST</td>
+<td>No</td>
+<td><code>{ queue_id, type, payload, delaySeconds, run_at, cron_expression }</code></td>
+<td>201, 500</td>
+<td>Submit a job (Dashboard demo)</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/jobs/:id/retry</code></td>
+<td>POST</td>
+<td>No</td>
+<td>None</td>
+<td>200, 500</td>
+<td>Retry a failed/dead job</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/dlq</code></td>
+<td>GET</td>
+<td>No</td>
+<td>None</td>
+<td>200, 500</td>
+<td>Fetch DLQ jobs</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/dlq/:jobId/requeue</code></td>
+<td>POST</td>
+<td>No</td>
+<td>None</td>
+<td>200, 500</td>
+<td>Requeue a DLQ job</td>
+</tr>
+<tr>
+<td><code>/api/dashboard/metrics</code></td>
+<td>GET</td>
+<td>No</td>
+<td>None</td>
+<td>200, 500</td>
+<td>Fetch overview metrics</td>
+</tr>
+<tr>
+<td><code>/api/jobs/</code></td>
+<td>POST</td>
+<td>Yes</td>
+<td><code>{ queue_id, type, payload, max_retries, run_at, cron_expression, idempotency_key }</code></td>
+<td>201, 400, 403</td>
+<td>Submit a new job (immediate/delayed/scheduled/recurring)</td>
+</tr>
+<tr>
+<td><code>/api/jobs/batch</code></td>
+<td>POST</td>
+<td>Yes</td>
+<td><code>{ jobs: [...] }</code></td>
+<td>201, 400, 403</td>
+<td>Submit multiple jobs in batch</td>
+</tr>
+<tr>
+<td><code>/api/jobs/</code></td>
+<td>GET</td>
+<td>Yes</td>
+<td>Query: <code>queue_id, status, limit, offset</code></td>
+<td>200, 500</td>
+<td>List jobs with filters (paginated)</td>
+</tr>
+<tr>
+<td><code>/api/jobs/:id</code></td>
+<td>GET</td>
+<td>Yes</td>
+<td>None</td>
+<td>200, 404, 500</td>
+<td>Get job detail including full execution history, logs, and payload</td>
+</tr>
+<tr>
+<td><code>/api/orgs/</code></td>
+<td>POST</td>
+<td>Yes</td>
+<td><code>{ name }</code></td>
+<td>201, 400</td>
+<td>Create a new organization</td>
+</tr>
+<tr>
+<td><code>/api/orgs/</code></td>
+<td>GET</td>
+<td>Yes</td>
+<td>None</td>
+<td>200, 500</td>
+<td>List organizations the user belongs to</td>
+</tr>
+<tr>
+<td><code>/api/projects/</code></td>
+<td>POST</td>
+<td>Yes</td>
+<td><code>{ org_id, name }</code></td>
+<td>201, 400, 403</td>
+<td>Create a new project in an org</td>
+</tr>
+<tr>
+<td><code>/api/projects/org/:orgId</code></td>
+<td>GET</td>
+<td>Yes</td>
+<td>None</td>
+<td>200, 403, 500</td>
+<td>List projects in an org</td>
+</tr>
+<tr>
+<td><code>/api/queues/</code></td>
+<td>POST</td>
+<td>Yes</td>
+<td><code>{ project_id, name, priority, concurrency_limit, retry_policy }</code></td>
+<td>201, 400, 403</td>
+<td>Create a new queue in a project</td>
+</tr>
+<tr>
+<td><code>/api/queues/project/:projectId</code></td>
+<td>GET</td>
+<td>Yes</td>
+<td>None</td>
+<td>200, 403, 500</td>
+<td>List queues in a project</td>
+</tr>
+<tr>
+<td><code>/api/queues/:id/pause</code></td>
+<td>PATCH</td>
+<td>Yes</td>
+<td>None</td>
+<td>200, 404, 500</td>
+<td>Pause a queue</td>
+</tr>
+<tr>
+<td><code>/api/queues/:id/resume</code></td>
+<td>PATCH</td>
+<td>Yes</td>
+<td>None</td>
+<td>200, 404, 500</td>
+<td>Resume a queue</td>
+</tr>
+<tr>
+<td><code>/api/workers/</code></td>
+<td>GET</td>
+<td>Yes</td>
+<td>None</td>
+<td>200, 500</td>
+<td>List worker nodes with computed liveness status</td>
+</tr>
+<tr>
+<td><code>/api/dead-letter/</code></td>
+<td>GET</td>
+<td>Yes</td>
+<td>None</td>
+<td>200, 500</td>
+<td>List Dead Letter Queue (DLQ) jobs</td>
+</tr>
+<tr>
+<td><code>/api/dead-letter/:id/retry</code></td>
+<td>POST</td>
+<td>Yes</td>
+<td>None</td>
+<td>200, 404, 500</td>
+<td>Requeue a job from the DLQ</td>
+</tr>
+</tbody></table>
+<h2>Error Response Shape</h2>
+<p>All endpoints return a standard error shape when a failure occurs:</p>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;error&quot;,
+  &quot;message&quot;: &quot;Human-readable error description&quot;,
+  &quot;code&quot;: &quot;400&quot;
+}
+</code></pre>
+<p><strong>Common Status Codes:</strong></p>
+<ul>
+<li><code>400 Bad Request</code>: Validation errors, malformed payloads.</li>
+<li><code>401 Unauthorized</code>: Missing or invalid JWT.</li>
+<li><code>403 Forbidden</code>: User does not have permission to access the requested resource (e.g. wrong organization).</li>
+<li><code>404 Not Found</code>: The requested job, queue, or resource does not exist.</li>
+<li><code>500 Internal Server Error</code>: Unexpected backend crash.</li>
+</ul>
+<h2>Paginated Response Shape</h2>
+<p>Endpoints like <code>GET /api/jobs/</code> utilize <code>limit</code> and <code>offset</code> query parameters. The response encapsulates an array of records:</p>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;data&quot;: {
+    &quot;jobs&quot;: [
+      { &quot;id&quot;: &quot;...&quot;, &quot;type&quot;: &quot;...&quot;, &quot;status&quot;: &quot;queued&quot; },
+      { &quot;id&quot;: &quot;...&quot;, &quot;type&quot;: &quot;...&quot;, &quot;status&quot;: &quot;completed&quot; }
+    ]
+  }
+}
+</code></pre>
+<h2>Request Body Examples</h2>
+<h3>Scheduled Job</h3>
+<p>To submit a job that will run exactly once at a specific future time, use the <code>scheduled</code> type and provide a <code>run_at</code> ISO-8601 timestamp (this is distinct from <code>delayed</code> which relies on <code>delaySeconds</code> in the dashboard or relative times).</p>
+<pre><code class="language-json">{
+  &quot;queue_id&quot;: &quot;123e4567-e89b-12d3-a456-426614174000&quot;,
+  &quot;type&quot;: &quot;scheduled&quot;,
+  &quot;run_at&quot;: &quot;2026-12-31T23:59:59Z&quot;,
+  &quot;payload&quot;: {
+    &quot;report_name&quot;: &quot;Year_End_Summary&quot;
+  }
+}
+</code></pre>
+
+
+<h2 id='testing'>9. Testing Architecture</h2>
+<p>The system is designed with robustness in mind. The following core test suites ensure reliability in a distributed environment:</p>
+<ul>
+    <li><strong>✓ Atomic claim race condition:</strong> Simulates multiple workers concurrently claiming jobs to ensure <code>FOR UPDATE SKIP LOCKED</code> prevents double-execution.</li>
+    <li><strong>✓ Retry policy tests:</strong> Verifies jobs accurately decrement retries and respect exponential backoff delays.</li>
+    <li><strong>✓ DLQ routing:</strong> Ensures jobs immediately route to the Dead Letter Queue when retries are exhausted.</li>
+    <li><strong>✓ Worker heartbeat recovery:</strong> Simulates a worker crash (killing the process) and verifies the Scheduler re-queues the orphaned job.</li>
+    <li><strong>✓ Queue pause/resume:</strong> Verifies workers immediately cease execution of a paused queue.</li>
+    <li><strong>✓ API validation tests:</strong> Ensures unauthorized requests and invalid payloads are safely rejected.</li>
+</ul>
+
+<h2 id='ui'>10. User Interface Screenshots</h2>
+<p>The dashboard provides full observability into the distributed system. <em>(Please insert screenshots from your local environment below)</em></p>
+<div class='screenshot-box'>
+    <h3>Login Page</h3>
+    <img src="./Login.png" alt="Login Page" onerror="this.outerHTML='<p style=\'color:red\'>Missing Login.png in folder!</p>'"/>
+</div>
+
+<div class='screenshot-box'>
+    <h3>Jobs Page</h3>
+    <img src="./Jobs.png" alt="Jobs Page" onerror="this.outerHTML='<p style=\'color:red\'>Missing Jobs.png in folder!</p>'"/>
+</div>
+<div class='screenshot-box'>
+    <h3>Worker Page</h3>
+    <img src="./Workers.png" alt="Worker Page" onerror="this.outerHTML='<p style=\'color:red\'>Missing Workers.png in folder!</p>'"/>
+</div>
+<div class='screenshot-box'>
+    <h3>Queues Page</h3>
+    <img src="./Queue.png" alt="Queues Page" onerror="this.outerHTML='<p style=\'color:red\'>Missing Queue.png in folder!</p>'"/>
+</div>
+
+<h2 id='bonus'>11. Bonus Features Implemented</h2>
+<ul>
+    <li><strong>Event-driven Execution (Postgres LISTEN/NOTIFY):</strong> Replaced standard database polling with high-performance event triggers. Workers instantly wake up the millisecond a job is inserted, eliminating polling latency.</li>
+    <li><strong>Live WebSocket Updates:</strong> Integrated Socket.io for a truly reactive dashboard. Job state transitions (queued → running → completed) and worker metrics stream to the UI in real-time without HTTP polling.</li>
+    <li><strong>API Rate Limiting:</strong> Implemented <code>express-rate-limit</code> middleware to secure the REST APIs against DDoS attacks and abuse.</li>
+    <li><strong>DevOps Ready:</strong> Configured Docker, Docker Compose, and Kubernetes (K8s) deployment manifests for production-grade container orchestration.</li>
+</ul>
+
+<h2 id='future'>12. Future Improvements</h2>
+<ul>
+    <li><strong>Queue sharding:</strong> Distributing queues across multiple database instances for massive throughput.</li>
+    <li><strong>AI-generated failure summaries:</strong> Automatically analyzing stack traces in the DLQ.</li>
+</ul>
+
+<h2 id='setup'>12. Setup Instructions</h2>
+<h1>Distributed Job Scheduler</h1>
+<p>A highly scalable, PostgreSQL-backed distributed job scheduler and worker system.</p>
+<h2>Features</h2>
+<ul>
+<li><strong>Job Types</strong>: Immediate, Delayed, Scheduled, Recurring (Cron), and Batch jobs.</li>
+<li><strong>Concurrency &amp; Scaling</strong>: Workers use PostgreSQL <code>FOR UPDATE SKIP LOCKED</code> for lock-free atomic job claiming.</li>
+<li><strong>Reliability</strong>: Dead Letter Queue (DLQ), retry policies (linear, exponential), and dead worker recovery.</li>
+</ul>
+<h2>Project Structure</h2>
+<ul>
+<li><code>job-scheduler-backend/</code>: Express API, Scheduler service, and Worker logic.</li>
+<li><code>job-scheduler-frontend/</code>: Next.js/React Dashboard.</li>
+<li><code>docs/</code>: System documentation:<ul>
+<li><a href="docs/ER_Diagram.md">ER Diagram</a></li>
+<li><a href="docs/Architecture.md">Architecture</a></li>
+<li><a href="docs/API_Reference.md">API Reference</a></li>
+<li><a href="docs/Design_Decisions.md">Design Decisions</a></li>
+</ul>
+</li>
+<li><code>tests/</code>: Automated tests verifying core flows.</li>
+</ul>
+<h2>Setup Instructions</h2>
+<h3>1. Prerequisites</h3>
+<ul>
+<li>Node.js (v18+)</li>
+<li>Docker &amp; Docker Compose</li>
+</ul>
+<h3>2. Run PostgreSQL</h3>
+<p>The project provides a <code>docker-compose.yml</code> in the backend directory.</p>
+<pre><code class="language-bash">cd job-scheduler-backend
+docker-compose up -d
+</code></pre>
+<h3>3. Environment Variables</h3>
+<p>In <code>job-scheduler-backend</code>, ensure you have an <code>.env</code> file containing:</p>
+<pre><code class="language-env">PORT=4000
+DATABASE_URL=postgres://scheduler_user:scheduler_password@localhost:5432/job_scheduler
+JWT_SECRET=supersecretjwt
+</code></pre>
+<h3>4. Install Dependencies</h3>
+<pre><code class="language-bash">cd job-scheduler-backend
+npm install
+</code></pre>
+<h3>5. Run Database Migrations and Seed</h3>
+<p>To set up the database schema and populate it with initial data (users, organizations, queues):</p>
+<pre><code class="language-bash">npm run migrate
+npx tsx src/seed.ts
+</code></pre>
+<blockquote>
+<p><strong>Demo Credentials</strong>: The seed script creates a default user you can use to log into the dashboard:
+<strong>Email</strong>: <code>demo@example.com</code>
+<strong>Password</strong>: <code>password123</code></p>
+</blockquote>
+<h3>6. Start the Backend API &amp; Scheduler</h3>
+<pre><code class="language-bash">npm run dev
+</code></pre>
+<blockquote>
+<p><strong>Backend API Base URL</strong>: The backend Express server runs on <code>http://localhost:4000</code>. You can find the full API endpoint documentation in the <a href="docs/API_Reference.md">API Reference</a>.</p>
+</blockquote>
+<h3>7. Run a Worker Node</h3>
+<p>You can start a standalone worker process. The worker uses the same codebase but typically runs via a dedicated entry point.</p>
+<pre><code class="language-bash">npx tsx src/worker/run.ts
+</code></pre>
+<p><em>(You can run multiple instances of the worker in different terminals to see distributed locking in action).</em></p>
+<h3>8. Frontend (Dashboard)</h3>
+<p>To view the UI:</p>
+<pre><code class="language-bash">cd ../job-scheduler-frontend
+npm install
+npm run dev
+</code></pre>
+<p>Open <code>http://localhost:5173</code> (or the port specified by Vite, e.g., 5173) to monitor queues, active workers, jobs, and the Dead Letter Queue.</p>
+<h2>Testing</h2>
+<p>To verify the core logic paths without running the UI, you can execute the test suite:</p>
+<pre><code class="language-bash">cd job-scheduler-backend
+npm run test
+</code></pre>
+<p><strong>Test Coverage</strong>: The suite programmatically verifies the <code>FOR UPDATE SKIP LOCKED</code> atomic claim race condition, the Dead Letter Queue routing on max failure retries, the dead-worker stalled detection and requeue mechanism, and schema-level validation constraints.</p>
+
+</body></html>

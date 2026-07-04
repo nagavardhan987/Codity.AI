@@ -39,8 +39,8 @@ export default function JobExplorer({ queueId, onBack }: { queueId?: string, onB
   const fetchJobs = async () => {
     try {
       const url = queueId 
-        ? `http://localhost:3000/api/dashboard/jobs?queue_id=${queueId}` 
-        : `http://localhost:3000/api/dashboard/jobs`;
+        ? `http://localhost:4000/api/dashboard/jobs?queue_id=${queueId}` 
+        : `http://localhost:4000/api/dashboard/jobs`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.status === 'success') {
@@ -56,7 +56,7 @@ export default function JobExplorer({ queueId, onBack }: { queueId?: string, onB
   const fetchQueues = async () => {
     if (!queueId) {
       try {
-        const res = await fetch('http://localhost:3000/api/dashboard/queues');
+        const res = await fetch('http://localhost:4000/api/dashboard/queues');
         const data = await res.json();
         if (data.status === 'success') {
           setQueues(data.data);
@@ -75,7 +75,7 @@ export default function JobExplorer({ queueId, onBack }: { queueId?: string, onB
     setLoadingLogs(true);
     setLogsData(null);
     try {
-      const res = await fetch(`http://localhost:3000/api/dashboard/jobs/${id}/logs`);
+      const res = await fetch(`http://localhost:4000/api/dashboard/jobs/${id}/logs`);
       const data = await res.json();
       if (data.status === 'success') {
         setLogsData(data.data);
@@ -89,7 +89,7 @@ export default function JobExplorer({ queueId, onBack }: { queueId?: string, onB
 
   const handleRetry = async (id: string) => {
     try {
-      await fetch(`http://localhost:3000/api/dashboard/jobs/${id}/retry`, { method: 'POST' });
+      await fetch(`http://localhost:4000/api/dashboard/jobs/${id}/retry`, { method: 'POST' });
       fetchJobs();
     } catch (err) {
       console.error(err);
@@ -128,7 +128,7 @@ export default function JobExplorer({ queueId, onBack }: { queueId?: string, onB
       }
 
       for (const payload of jobsToSubmit) {
-        await fetch('http://localhost:3000/api/dashboard/jobs', {
+        await fetch('http://localhost:4000/api/dashboard/jobs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

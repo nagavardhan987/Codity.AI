@@ -5,7 +5,7 @@ export default function DashboardMetrics() {
 
   const fetchMetrics = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/dashboard/metrics');
+      const res = await fetch('http://localhost:4000/api/dashboard/metrics');
       const data = await res.json();
       if (data.status === 'success') {
         setMetrics(data.data);

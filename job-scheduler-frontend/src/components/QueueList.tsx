@@ -19,7 +19,7 @@ export default function QueueList({ projectId, onSelectQueue }: { projectId: str
   const fetchQueues = async () => {
     if (!projectId) return;
     try {
-      const res = await fetch(`http://localhost:3000/api/dashboard/queues?project_id=${projectId}`);
+      const res = await fetch(`http://localhost:4000/api/dashboard/queues?project_id=${projectId}`);
       const data = await res.json();
       if (data.status === 'success') {
         setQueues(data.data);
@@ -33,15 +33,16 @@ export default function QueueList({ projectId, onSelectQueue }: { projectId: str
 
   useEffect(() => {
     fetchQueues();
-    const interval = setInterval(fetchQueues, 5000);
-    return () => clearInterval(interval);
+    const handleUpdate = () => fetchQueues();
+    window.addEventListener('dashboard_update', handleUpdate);
+    return () => window.removeEventListener('dashboard_update', handleUpdate);
   }, [projectId]);
 
   const handleCreateQueue = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
     try {
-      const res = await fetch('http://localhost:3000/api/dashboard/queues', {
+      const res = await fetch('http://localhost:4000/api/dashboard/queues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newQueue, project_id: projectId })
@@ -61,7 +62,7 @@ export default function QueueList({ projectId, onSelectQueue }: { projectId: str
   const handleTogglePause = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     try {
-      await fetch(`http://localhost:3000/api/dashboard/queues/${id}/toggle`, { method: 'POST' });
+      await fetch(`http://localhost:4000/api/dashboard/queues/${id}/toggle`, { method: 'POST' });
       fetchQueues();
     } catch (err) {
       console.error(err);

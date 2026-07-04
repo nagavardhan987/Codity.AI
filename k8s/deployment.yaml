@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: scheduler-api
+  template:
+    metadata:
+      labels:
+        app: scheduler-api
+    spec:
+      containers:
+      - name: api
+        image: myregistry/scheduler-api:latest
+        ports:
+        - containerPort: 4000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: url
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler-worker
+spec:
+  replicas: 5 # Scale as needed
+  selector:
+    matchLabels:
+      app: scheduler-worker
+  template:
+    metadata:
+      labels:
+        app: scheduler-worker
+    spec:
+      containers:
+      - name: worker
+        image: myregistry/scheduler-backend:latest
+        command: ["npm", "run", "worker"]
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: url
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduler-api-svc
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 4000
+  selector:
+    app: scheduler-api

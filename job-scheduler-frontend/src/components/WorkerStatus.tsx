@@ -10,7 +10,7 @@ export default function WorkerStatus() {
 
   const fetchWorkers = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/dashboard/workers');
+      const res = await fetch('http://localhost:4000/api/dashboard/workers');
       const data = await res.json();
       if (data.status === 'success') {
         setWorkers(data.data);
@@ -24,8 +24,9 @@ export default function WorkerStatus() {
 
   useEffect(() => {
     fetchWorkers();
-    const interval = setInterval(fetchWorkers, 3000);
-    return () => clearInterval(interval);
+    const handleUpdate = () => fetchWorkers();
+    window.addEventListener('dashboard_update', handleUpdate);
+    return () => window.removeEventListener('dashboard_update', handleUpdate);
   }, []);
 
   const filteredWorkers = workers.filter(w => 

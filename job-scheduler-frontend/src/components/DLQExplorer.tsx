@@ -9,7 +9,7 @@ export default function DLQExplorer() {
 
   const fetchDLQ = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/dashboard/dlq');
+      const res = await fetch('http://localhost:4000/api/dashboard/dlq');
       const data = await res.json();
       if (data.status === 'success') {
         setJobs(data.data);
@@ -23,7 +23,7 @@ export default function DLQExplorer() {
 
   const handleRequeue = async (jobId: string) => {
     try {
-      await fetch(`http://localhost:3000/api/dashboard/dlq/${jobId}/requeue`, { method: 'POST' });
+      await fetch(`http://localhost:4000/api/dashboard/dlq/${jobId}/requeue`, { method: 'POST' });
       fetchDLQ();
     } catch (err) {
       console.error(err);

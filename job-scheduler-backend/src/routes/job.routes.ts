@@ -3,6 +3,7 @@ import { db } from '../db/database';
 import { AppError } from '../middlewares/errorHandler';
 import { authenticate } from '../middlewares/authMiddleware';
 import { z } from 'zod';
+import { io } from '../index';
 
 const router = Router();
 router.use(authenticate);
@@ -113,6 +114,8 @@ router.post('/', async (req, res, next) => {
     } else {
       throw new AppError('Invalid job type', 400);
     }
+
+    io.emit('dashboard_update');
 
     res.status(201).json({ status: 'success', data: { job: result } });
   } catch (error) {

@@ -14,7 +14,7 @@ export default function AuthPage({ onLogin }: { onLogin: (token: string, user: a
 
     try {
       const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-      const res = await fetch(`http://localhost:3000${endpoint}`, {
+      const res = await fetch(`http://localhost:4000${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })

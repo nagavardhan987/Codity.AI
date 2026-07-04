@@ -45,9 +45,9 @@ router.post('/register', async (req, res, next) => {
     });
 
     res.status(201).json({ status: 'success', data: { user } });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      next(new AppError(error.errors.map((e) => e.message).join(', '), 400));
+  } catch (error: any) {
+    if (error instanceof z.ZodError || error.name === 'ZodError') {
+      next(new AppError(error.errors?.map((e: any) => e.message).join(', ') || 'Invalid input', 400));
     } else {
       next(error);
     }
@@ -80,9 +80,9 @@ router.post('/login', async (req, res, next) => {
         user: { id: user.id, email: user.email },
       },
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      next(new AppError(error.errors.map((e) => e.message).join(', '), 400));
+  } catch (error: any) {
+    if (error instanceof z.ZodError || error.name === 'ZodError') {
+      next(new AppError(error.errors?.map((e: any) => e.message).join(', ') || 'Invalid input', 400));
     } else {
       next(error);
     }

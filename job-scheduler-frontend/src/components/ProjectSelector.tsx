@@ -20,7 +20,7 @@ export default function ProjectSelector({ token, onProjectSelect }: ProjectSelec
 
   const fetchOrgs = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/orgs', {
+      const res = await fetch('http://localhost:4000/api/orgs', {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -39,7 +39,7 @@ export default function ProjectSelector({ token, onProjectSelect }: ProjectSelec
 
   const fetchProjects = async (orgId: string) => {
     try {
-      const res = await fetch(`http://localhost:3000/api/projects/org/${orgId}`, {
+      const res = await fetch(`http://localhost:4000/api/projects/org/${orgId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -63,7 +63,7 @@ export default function ProjectSelector({ token, onProjectSelect }: ProjectSelec
     e.preventDefault();
     if (!newProjectName.trim()) return;
     try {
-      const res = await fetch('http://localhost:3000/api/projects', {
+      const res = await fetch('http://localhost:4000/api/projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

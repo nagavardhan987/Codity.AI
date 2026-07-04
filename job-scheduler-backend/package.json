@@ -6,7 +6,9 @@
   "scripts": {
     "test": "tsx ../tests/core.test.ts",
     "migrate": "tsx src/db/migrate.ts",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "worker": "tsx src/worker/run.ts",
+    "seed": "tsx src/seed.ts"
   },
   "keywords": [],
   "author": "",
@@ -18,9 +20,11 @@
     "cron-parser": "^5.6.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "jsonwebtoken": "^9.0.3",
     "kysely": "^0.29.2",
     "pg": "^8.22.0",
+    "socket.io": "^4.8.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

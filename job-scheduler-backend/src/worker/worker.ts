@@ -1,7 +1,8 @@
 import os from 'os';
-import { db } from '../db/database';
+import { db, pool } from '../db/database';
 import { sql } from 'kysely';
 import { JobExecutor } from './jobExecutor';
+import { PoolClient } from 'pg';
 
 export class Worker {
   private workerId: string | null = null;
@@ -11,6 +12,7 @@ export class Worker {
   private maxConcurrent: number;
   private executor = new JobExecutor();
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private listenClient: PoolClient | null = null;
 
   constructor(queueIds: string[], maxConcurrent: number = 10) {
     this.queueIds = queueIds;
@@ -38,6 +40,10 @@ export class Worker {
   async stop() {
     this.isRunning = false;
     if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
+    if (this.listenClient) {
+      this.listenClient.release();
+      this.listenClient = null;
+    }
     if (this.workerId) {
       // Worker liveness is based on heartbeat, so just stopping the timer will let it timeout.
     }
@@ -45,12 +51,12 @@ export class Worker {
   }
 
   private startHeartbeat() {
-    this.heartbeatTimer = setInterval(async () => {
+    const ping = async () => {
       if (!this.workerId) return;
       try {
         await sql<any>`
           INSERT INTO worker_heartbeats (worker_id, cpu_usage, memory_usage, timestamp)
-          VALUES (${this.workerId}, ${os.loadavg()[0]}, ${process.memoryUsage().rss / (1024 * 1024)}, NOW())
+          VALUES (${this.workerId}, ${os.loadavg()[0]}, ${process.memoryUsage().rss / (1024 * 1024)}, ${sql.val(new Date())})
           ON CONFLICT (worker_id) DO UPDATE SET
             cpu_usage = EXCLUDED.cpu_usage,
             memory_usage = EXCLUDED.memory_usage,
@@ -59,20 +65,48 @@ export class Worker {
       } catch (err) {
         console.error('Failed to send heartbeat', err);
       }
-    }, 15000); // 15 seconds
+    };
+    ping(); // Immediate heartbeat on start
+    this.heartbeatTimer = setInterval(ping, 15000); // 15 seconds
   }
 
   private async pollLoop() {
-    while (this.isRunning) {
-      if (this.activeJobs >= this.maxConcurrent) {
-        await new Promise((res) => setTimeout(res, 1000));
-        continue;
+    // Attempt to claim jobs continuously as long as there is work
+    const drainQueues = async () => {
+      let hasWork = true;
+      while (hasWork && this.isRunning && this.activeJobs < this.maxConcurrent) {
+        hasWork = await this.claimJob();
       }
+    };
 
-      const jobClaimed = await this.claimJob();
-      if (!jobClaimed) {
-        // Backoff slightly when no jobs
-        await new Promise((res) => setTimeout(res, 2000));
+    try {
+      this.listenClient = await pool.connect();
+      await this.listenClient.query('LISTEN new_job');
+      
+      this.listenClient.on('notification', async (msg) => {
+        if (!this.isRunning) return;
+        if (msg.payload && this.queueIds.includes(msg.payload)) {
+          // A new job was inserted into one of our queues, wake up!
+          await drainQueues();
+        }
+      });
+
+      console.log(`Worker ${this.workerId} is listening for 'new_job' events...`);
+
+      // Fallback polling (every 10 seconds) to catch delayed jobs or missed events
+      while (this.isRunning) {
+        await drainQueues();
+        await new Promise(res => setTimeout(res, 10000));
+      }
+    } catch (err) {
+      console.error('Listen client failed, falling back to aggressive polling', err);
+      while (this.isRunning) {
+        if (this.activeJobs >= this.maxConcurrent) {
+          await new Promise((res) => setTimeout(res, 1000));
+          continue;
+        }
+        const jobClaimed = await this.claimJob();
+        if (!jobClaimed) await new Promise((res) => setTimeout(res, 2000));
       }
     }
   }
@@ -238,6 +272,10 @@ export class Worker {
             .execute();
         }
       });
+      
+      const { io } = require('../index');
+      io.emit('dashboard_update');
+      
     } catch (err) {
       console.error('Failed to update job execution status', err);
     }

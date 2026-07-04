@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import QueueList from './components/QueueList';
 import WorkerStatus from './components/WorkerStatus';
 import JobExplorer from './components/JobExplorer';
@@ -11,6 +12,15 @@ function App() {
   const [activeTab, setActiveTab] = useState('queues');
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string>('');
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = io('http://localhost:4000');
+    socket.on('dashboard_update', () => {
+      window.dispatchEvent(new Event('dashboard_update'));
+    });
+    return () => { socket.disconnect(); };
+  }, [token]);
 
   const handleLogin = (newToken: string, user: any) => {
     localStorage.setItem('jwt_token', newToken);
